@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no">
+    <title>BIM-GIS</title>
+    <script type="text/javascript" src="https://oapi.map.naver.com/openapi/v3/maps.js?ncpClientId=co7j31laqa"></script>
+    <link href="https://vjs.zencdn.net/7.14.3/video-js.css" rel="stylesheet" />
+    <script src="https://vjs.zencdn.net/7.14.3/video.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+</head>
+<body>
+    <style type="text/css">
+        #wrap .buttons { position:absolute;top:0;left:0;z-index:1000;padding:5px; }
+        #wrap .buttons .control-btn { margin:0 5px 5px 0; }
+    </style>
+    <div id="wrap" style="width: 100%; height : 98vh; overflow-y: hidden; display: flex; flex-direction: row; overflow: hidden;">
+        <div id="map" style="width: 50%; height: 98vh; position: relative; overflow: hidden; background: rgb(248, 249, 250);">
+        </div>
+        <div class="buttons">
+            <input id="traffic" type="button" value="교통현황" class="control-btn control-on" onclick={trafficBtnEvnt()}>
+            <input id="CCTV" type="button" value="CCTV" class="control-btn control-on" onclick={cctvBtnEvnt()}>
+        </div>
+        <script>
+
+        var position = new naver.maps.LatLng(37, 127.5);
+
+        var map = new naver.maps.Map('map', {
+            center: position,
+            zoom: 15,
+            mapTypeControl: true,
+        });
+
+        var bounds = map.getBounds(),
+            southWest = bounds.getSW(),
+            northEast = bounds.getNE(),
+            lngSpan = northEast.lng() - southWest.lng(),
+            latSpan = northEast.lat() - southWest.lat();
+
+        var markerOptions = {
+            position: position.destinationPoint(0, 0),
+            map: map,
+            icon: {
+                url: 'site_pin.png',
+                size : new naver.maps.Size(50,50),
+                origin: new naver.maps.Point(0, 0),
+                anchor: new naver.maps.Point(25, 50)
+            }
+        };
+
+        var trafficLayer = new naver.maps.TrafficLayer({
+            interval: 300000 // 5분마다 새로고침 (최소값 5분)
+        });
+
+        var marker = new naver.maps.Marker(markerOptions);
+
+        var trafficOnOFF = "OFF"
+
+        function trafficBtnEvnt (){
+            if (trafficOnOFF == "ON"){
+                trafficLayer.setMap(null);
+                trafficOnOFF = "OFF";
+            }
+
+            else {
+                trafficLayer.setMap(map);
+                trafficOnOFF = "ON";
+            }
+        }
+
+        var cctvOnOFF = "OFF"
+
+        var markers = [],
+        infoWindows = [];
+
+        function getCCTV() {
+            var cctvUrl = "https://openapi.its.go.kr:9443/cctvInfo?apiKey=40a4447a48984752aa8b83a3f72bfb59&type=its&cctvType=2&minX=127.4&maxX=127.6&minY=36.9&maxY=37.1&getType=json";
+            var cctvRequest = new XMLHttpRequest();
+            cctvRequest.open("GET", cctvUrl);
+            cctvRequest.responseType = "json";
+            cctvRequest.send();
+
+            cctvRequest.onload = function () {
+
+                markers = [];
+                infoWindows = [];
+
+                var cctvJson = cctvRequest.response.response.data;
+                cctvJson.forEach(element => {
+                    var cctvMarker = new naver.maps.Marker({
+                    position: new naver.maps.LatLng(element.coordy, element.coordx),
+                    map: map,
+                    icon: {
+                            url: 'cctv.png',
+                            size : new naver.maps.Size(50,50),
+                            origin: new naver.maps.Point(0, 0),
+                            anchor: new naver.maps.Point(25, 50),
+                        }
+                    });
+                    //console.log(element.cctvurl.toString());
+
+                    var infoWindow = new naver.maps.InfoWindow({
+                        content: '<div style="width : 250px;"><video height="150" width="250" controls autoplay muted name="media"><source src="' + element.cctvurl.toString() + '" type="video/mp4"></video></div>'
+                    });
+
+                    markers.push(cctvMarker);
+                    infoWindows.push(infoWindow);
+
+                });
+                    naver.maps.Event.addListener(map, 'idle', function() {
+                        console.log("Listener added");
+                    updateMarkers(map, markers);
+                });
+
+                for (var i=0, ii=markers.length; i<ii; i++) {
+                    naver.maps.Event.addListener(markers[i], 'click', getClickHandler(i));
+                }
+            };
+
+        }
+
+        function updateMarkers(map, markers) {
+
+            var mapBounds = map.getBounds();
+            var marker, position;
+
+            for (var i = 0; i < markers.length; i++) {
+
+                marker = markers[i]
+                position = marker.getPosition();
+
+                if (mapBounds.hasLatLng(position)) {
+                    showMarker(map, marker);
+                } else {
+                    hideMarker(map, marker);
+                }
+            }
+        }
+
+        function cctvBtnEvnt (){
+            if (cctvOnOFF == "ON"){
+                cctvOnOFF = "OFF";
+            }
+
+            else {
+                //CCTV API 연결 및 정보 가져오기
+                getCCTV();
+                cctvOnOFF = "ON";
+            }
+        }
+
+        function showMarker(map, marker) {
+
+            if (marker.setMap()) return;
+            marker.setMap(map);
+            }
+
+            function hideMarker(map, marker) {
+
+            if (!marker.setMap()) return;
+            marker.setMap(null);
+            }
+
+        function getClickHandler(seq) {
+            return function(e) {
+                var marker = markers[seq],
+                    infoWindow = infoWindows[seq];
+
+                if (infoWindow.getMap()) {
+                    infoWindow.close();
+                } else {
+                    infoWindow.open(map, marker);
+                }
+            }
+        }
+        </script>
+        <iframe src="http://static-3g-gis.s3-website.ap-northeast-2.amazonaws.com/"  style="width: 80%;height: 98vh; border: none;"/>
+    </div>
+</body>
+</html>
